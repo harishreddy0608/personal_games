@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#0f1a0f" />
+<title>Snake</title>
+<style>
+  :root {
+    --bg: #0f1a0f;
+    --panel: #1b2a1b;
+    --lcd: #9bbc0f;
+    --lcd-dim: #306230;
+    --accent: #8bac0f;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--lcd);
+    font-family: "Courier New", monospace;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+  }
+
+  .machine {
+    background: var(--panel);
+    padding: 24px;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), inset 0 0 0 2px #26381f;
+    text-align: center;
+  }
+
+  .titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .title {
+    letter-spacing: 6px;
+    font-weight: bold;
+    font-size: 20px;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+
+  .mute-btn {
+    background: transparent;
+    border: 1px solid var(--lcd-dim);
+    color: var(--lcd);
+    font-family: inherit;
+    font-size: 12px;
+    border-radius: 6px;
+    padding: 4px 8px;
+    cursor: pointer;
+    letter-spacing: 1px;
+  }
+  .mute-btn:hover { background: #223322; }
+
+  .hud {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+    gap: 8px;
+  }
+  .hud .multi { color: var(--accent); }
+
+  .screen-wrap {
+    position: relative;
+    background: var(--lcd);
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: inset 0 0 0 3px var(--lcd-dim);
+    overflow: hidden;
+  }
+
+  canvas {
+    display: block;
+    background: var(--lcd);
+    /* Lock displayed size to the drawing buffer so the field is never
+       stretched out of proportion by page zoom or layout. */
+    width: 440px;
+    height: 440px;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(15, 56, 15, 0.82);
+    color: var(--lcd);
+    border-radius: 4px;
+    font-size: 16px;
+    letter-spacing: 2px;
+    text-align: center;
+    padding: 0 16px;
+  }
+
+  .overlay.hidden { display: none; }
+
+  .overlay .big { font-size: 24px; font-weight: bold; }
+  .overlay .small { font-size: 12px; opacity: 0.9; line-height: 1.7; }
+
+  .hint {
+    margin-top: 12px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    opacity: 0.6;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+  <div class="machine">
+    <div class="titlebar">
+      <div class="title">Snake</div>
+      <button class="mute-btn" id="mute">SOUND: ON</button>
+    </div>
+    <div class="hud">
+      <span>SCORE <span id="score">0</span></span>
+      <span class="multi" id="multi-wrap">x<span id="multi">1</span></span>
+      <span>LVL <span id="level">1</span></span>
+      <span>BEST <span id="best">0</span></span>
+    </div>
+    <div class="screen-wrap" id="screen">
+      <canvas id="game" width="440" height="440"></canvas>
+      <div class="overlay" id="overlay">
+        <div class="big" id="overlay-title">SNAKE</div>
+        <div class="small" id="overlay-text">
+          Eat apples, dodge rocks, don't bite yourself<br />
+          Edges wrap around &mdash; glide through and reappear<br /><br />
+          Press an ARROW key or WASD to begin<br />
+          (the snake waits for your first move)
+        </div>
+      </div>
+    </div>
+    <div class="hint">
+      SPACE / P = pause &nbsp;•&nbsp; ARROWS / WASD = move &nbsp;•&nbsp; M = mute<br />
+      GOLD apple = big points &nbsp;•&nbsp; BERRY = speed frenzy &nbsp;•&nbsp; chain eats for combo
+    </div>
+  </div>
+
+<script>
+(() => {
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const screen = document.getElementById("screen");
+
+  const GRID = 20;
+  const CELL = canvas.width / GRID;
+
+  const DEBUG = false;           // on-canvas head coords + last crash cause
+  const WRAP = true;             // edges wrap around instead of being deadly walls
+  let lastCrashReason = "";
+
+  const scoreEl = document.getElementById("score");
+  const bestEl = document.getElementById("best");
+  const levelEl = document.getElementById("level");
+  const multiEl = document.getElementById("multi");
+  const overlay = document.getElementById("overlay");
+  const overlayTitle = document.getElementById("overlay-title");
+  const overlayText = document.getElementById("overlay-text");
+  const muteBtn = document.getElementById("mute");
+
+  const COLORS = {
+    board: "#9bbc0f",
+    gridDot: "rgba(15, 56, 15, 0.08)",
+    bodyDark: "#0b2e0b",
+    bodyMid: "#1c5a1c",
+    bodyLight: "#2f7d2f",
+    scale: "rgba(10, 40, 10, 0.35)",
+    eye: "#f4f7d0",
+    pupil: "#0b2e0b",
+    tongue: "#b4324a",
+    appleBody: "#1f6b1f",
+    appleShine: "rgba(255,255,255,0.35)",
+    appleLeaf: "#0f380f",
+    appleStem: "#5a3410",
+    gold: "#c8a21a",
+    goldShine: "rgba(255,255,255,0.55)",
+    berry: "#7a2d6b",
+    berryShine: "rgba(255,255,255,0.4)",
+    rock: "#4a4a2a",
+    rockDark: "#2e2e16",
+    rockLight: "#6a6a44",
+    popup: "#0b2e0b",
+  };
+
+  // Food types
+  const FOOD = {
+    APPLE: "apple",   // normal, permanent until eaten
+    GOLD:  "gold",    // bonus points, expires
+    BERRY: "berry",   // speed frenzy, expires
+  };
+
+  // ---- Game state ----------------------------------------------------------
+  let snake, dir, dirQueue, food, bonus, obstacles;
+  let score, best, level, applesThisLevel, speed, baseSpeed;
+  let combo, comboTimer;          // combo multiplier state
+  let frenzyUntil = 0;            // timestamp while speed frenzy active
+  let running, gameOver;
+  let waiting = false;            // true after start until the first move input
+  let lastStepTime = 0;
+  let prevSnake = [];
+  let rafId = null;
+
+  // Effects
+  let particles = [];
+  let popups = [];
+  let shake = 0;
+
+  // Audio
+  let muted = localStorage.getItem("snake_muted") === "1";
+  let audioCtx = null;
+  updateMuteLabel();
+
+  best = Number(localStorage.getItem("snake_best") || 0);
+  bestEl.textContent = best;
+
+  const APPLES_PER_LEVEL = 5;
+
+  // ---- Setup ---------------------------------------------------------------
+  function reset() {
+    const start = Math.floor(GRID / 2);
+    snake = [
+      { x: start, y: start },
+      { x: start - 1, y: start },
+      { x: start - 2, y: start },
+    ];
+    dir = { x: 1, y: 0 };
+    dirQueue = [];
+    score = 0;
+    level = 1;
+    applesThisLevel = 0;
+    baseSpeed = 150;
+    speed = baseSpeed;
+    combo = 0;
+    comboTimer = 0;
+    frenzyUntil = 0;
+    gameOver = false;
+    waiting = false;
+    obstacles = [];
+    bonus = null;
+    particles = [];
+    popups = [];
+    shake = 0;
+    prevSnake = snake.map(s => ({ ...s }));
+    lastStepTime = performance.now();
+    placeFood();
+    updateHUD();
+  }
+
+  function updateHUD() {
+    scoreEl.textContent = score;
+    levelEl.textContent = level;
+    multiEl.textContent = Math.max(1, comboMultiplier());
+  }
+
+  function occupied(x, y) {
+    if (snake && snake.some(s => s.x === x && s.y === y)) return true;
+    if (obstacles && obstacles.some(o => o.x === x && o.y === y)) return true;
+    if (food && food.x === x && food.y === y) return true;
+    if (bonus && bonus.x === x && bonus.y === y) return true;
+    return false;
+  }
+
+  function randFreeCell() {
+    let spot, guard = 0;
+    do {
+      spot = { x: (Math.random() * GRID) | 0, y: (Math.random() * GRID) | 0 };
+      guard++;
+    } while (occupied(spot.x, spot.y) && guard < 500);
+    return spot;
+  }
+
+  function placeFood() {
+    food = { ...randFreeCell(), type: FOOD.APPLE };
+  }
+
+  function maybeSpawnBonus(now) {
+    if (bonus) return;
+    // Small chance each step to spawn a timed bonus item
+    if (Math.random() < 0.04) {
+      const type = Math.random() < 0.5 ? FOOD.GOLD : FOOD.BERRY;
+      bonus = { ...randFreeCell(), type, bornAt: now, ttl: 6000 };
+    }
+  }
+
+  function addObstacles(count) {
+    const head = snake[0];
+
+    // Cells that are unsafe to drop a rock on:
+    //  - any snake body cell
+    //  - the food and bonus cells
+    //  - a safety bubble around the head (so you can't be trapped)
+    //  - the next several cells straight ahead in the current heading
+    const unsafe = (x, y) => {
+      if (x < 0 || x >= GRID || y < 0 || y >= GRID) return true;
+      if (snake.some(s => s.x === x && s.y === y)) return true;
+      if (food && food.x === x && food.y === y) return true;
+      if (bonus && bonus.x === x && bonus.y === y) return true;
+      if (obstacles.some(o => o.x === x && o.y === y)) return true;
+      // 2-cell bubble around the head
+      if (Math.abs(x - head.x) <= 2 && Math.abs(y - head.y) <= 2) return true;
+      // 5 cells straight ahead of the head
+      for (let k = 1; k <= 5; k++) {
+        if (x === head.x + dir.x * k && y === head.y + dir.y * k) return true;
+      }
+      return false;
+    };
+
+    let placed = 0, guard = 0;
+    while (placed < count && guard < 400) {
+      guard++;
+      const x = (Math.random() * GRID) | 0;
+      const y = (Math.random() * GRID) | 0;
+      if (unsafe(x, y)) continue;
+      obstacles.push({ x, y });
+      placed++;
+    }
+  }
+
+  // ---- Combo ---------------------------------------------------------------
+  function comboMultiplier() {
+    // combo of 0-1 -> x1, 2-3 -> x2, 4-5 -> x3, capped at x5
+    return Math.min(5, 1 + Math.floor(combo / 2));
+  }
+
+  // ---- Step logic ----------------------------------------------------------
+  function step(now) {
+    // Pull the next buffered turn (if any). The buffer already guarantees no
+    // move reverses the one before it, so dir can never fold back on the neck.
+    if (dirQueue.length) dir = dirQueue.shift();
+
+    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+    if (WRAP) {
+      // Wrap-around edges: leaving one side re-enters from the opposite side.
+      head.x = (head.x + GRID) % GRID;
+      head.y = (head.y + GRID) % GRID;
+    } else if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID) {
+      return crash(`WALL @ (${head.x},${head.y}) dir(${dir.x},${dir.y})`);
+    }
+    const hitRock = obstacles.find(o => o.x === head.x && o.y === head.y);
+    if (hitRock) return crash(`ROCK @ (${head.x},${head.y})`);
+
+    // Will we grow this step? (apple or bonus eaten -> tail stays put)
+    const willEat =
+      (head.x === food.x && head.y === food.y) ||
+      (bonus && head.x === bonus.x && head.y === bonus.y);
+
+    // Self-collision: when not growing, the current tail tip vacates this step,
+    // so moving into it is legal and must not count as a hit.
+    const bodyToCheck = willEat ? snake : snake.slice(0, snake.length - 1);
+    const hitIndex = bodyToCheck.findIndex(s => s.x === head.x && s.y === head.y);
+    if (hitIndex !== -1) {
+      return crash(`SELF seg#${hitIndex} @ (${head.x},${head.y}) len=${snake.length}`);
+    }
+
+    prevSnake = snake.map(s => ({ ...s }));
+    snake.unshift(head);
+
+    let ate = false;
+
+    // Normal apple
+    if (head.x === food.x && head.y === food.y) {
+      ate = true;
+      registerEat(head, FOOD.APPLE, now);
+      placeFood();
+    }
+    // Bonus item
+    else if (bonus && head.x === bonus.x && head.y === bonus.y) {
+      ate = true;
+      registerEat(head, bonus.type, now);
+      bonus = null;
+    }
+
+    if (ate) {
+      prevSnake.push({ ...prevSnake[prevSnake.length - 1] }); // keep tail length visually
+    } else {
+      snake.pop();
+    }
+
+    // Combo decays if you take too long between eats
+    if (comboTimer > 0 && now > comboTimer) {
+      combo = 0;
+      updateHUD();
+    }
+
+    // Frenzy expiry
+    if (frenzyUntil && now > frenzyUntil) {
+      frenzyUntil = 0;
+      recomputeSpeed();
+    }
+
+    if (!bonus) maybeSpawnBonus(now);
+  }
+
+  function registerEat(at, type, now) {
+    // Build / extend combo
+    combo++;
+    comboTimer = now + 3500;          // 3.5s window to keep the chain alive
+    const mult = comboMultiplier();
+
+    let base;
+    if (type === FOOD.APPLE) base = 10;
+    else if (type === FOOD.GOLD) base = 50;
+    else base = 20; // berry
+
+    const gained = base * mult;
+    score += gained;
+
+    popups.push({ x: cx(at.x), y: cx(at.y), text: "+" + gained, life: 1, born: now });
+    spawnParticles(cx(at.x), cx(at.y), type);
+
+    if (type === FOOD.APPLE) {
+      applesThisLevel++;
+      if (applesThisLevel >= APPLES_PER_LEVEL) levelUp(now);
+      sound("eat");
+    } else if (type === FOOD.GOLD) {
+      sound("gold");
+    } else if (type === FOOD.BERRY) {
+      frenzyUntil = now + 4000;       // 4s speed burst
+      recomputeSpeed();
+      sound("berry");
+    }
+
+    updateHUD();
+  }
+
+  function levelUp(now) {
+    level++;
+    applesThisLevel = 0;
+    baseSpeed = Math.max(70, baseSpeed - 10);
+    recomputeSpeed();
+    addObstacles(Math.min(level, 3));  // a few rocks per level, bounded
+    popups.push({ x: canvas.width / 2, y: canvas.height / 2, text: "LEVEL " + level, life: 1.4, born: now, big: true });
+    sound("level");
+  }
+
+  function recomputeSpeed() {
+    const frenzyActive = frenzyUntil && performance.now() < frenzyUntil;
+    speed = frenzyActive ? Math.max(45, baseSpeed * 0.55) : baseSpeed;
+  }
+
+  function crash(reason) {
+    lastCrashReason = reason || "unknown";
+    shake = 14;
+    particles = [];   // clear lingering burst particles on death
+    popups = [];
+    sound("crash");
+    end();
+  }
+
+  // ---- Effects -------------------------------------------------------------
+  function spawnParticles(x, y, type) {
+    const color = type === FOOD.GOLD ? COLORS.gold
+                : type === FOOD.BERRY ? COLORS.berry
+                : COLORS.appleBody;
+    const count = type === FOOD.APPLE ? 10 : 18;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 0.6 + Math.random() * 2.2;
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        life: 1,
+        color,
+        r: 1.5 + Math.random() * 2.5,
+      });
+    }
+  }
+
+  function updateEffects(dt) {
+    for (const p of particles) {
+      p.x += p.vx * dt * 0.06;
+      p.y += p.vy * dt * 0.06;
+      p.vy += 0.03 * dt * 0.06;
+      p.life -= dt * 0.0025;
+    }
+    particles = particles.filter(p => p.life > 0);
+
+    for (const u of popups) {
+      u.y -= dt * 0.02;
+      u.life -= dt * (u.big ? 0.0012 : 0.0018);
+    }
+    popups = popups.filter(u => u.life > 0);
+
+    if (shake > 0) shake = Math.max(0, shake - dt * 0.05);
+  }
+
+  // ---- Rendering -----------------------------------------------------------
+  function cx(v) { return v * CELL + CELL / 2; }
+
+  function buildPath(t) {
+    const pts = [];
+    for (let i = 0; i < snake.length; i++) {
+      const cur = snake[i];
+      let prev = prevSnake[i] || cur;
+      // If a segment wrapped across an edge this step, the prev/cur jump is
+      // more than one cell. Snapping prev to cur avoids drawing a long streak
+      // straight across the board during the wrap.
+      if (Math.abs(cur.x - prev.x) > 1 || Math.abs(cur.y - prev.y) > 1) {
+        prev = cur;
+      }
+      pts.push({
+        x: cx(prev.x + (cur.x - prev.x) * t),
+        y: cx(prev.y + (cur.y - prev.y) * t),
+      });
+    }
+    return pts;
+  }
+
+  function smoothPoints(pts, subdivisions) {
+    if (pts.length < 3) return pts;
+    const out = [];
+    const p = pts;
+    for (let i = 0; i < p.length - 1; i++) {
+      const p0 = p[i - 1] || p[i];
+      const p1 = p[i];
+      const p2 = p[i + 1];
+      const p3 = p[i + 2] || p2;
+      for (let s = 0; s < subdivisions; s++) {
+        const u = s / subdivisions, u2 = u * u, u3 = u2 * u;
+        out.push({
+          x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * u +
+              (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * u2 +
+              (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * u3),
+          y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * u +
+              (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * u2 +
+              (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * u3),
+        });
+      }
+    }
+    out.push(p[p.length - 1]);
+    return out;
+  }
+
+  // Split a raw interpolated path at wrap boundaries, smooth each contiguous
+  // run independently, and concatenate. The large gap left between runs is
+  // detected and skipped by the drawers, so nothing is connected across a wrap.
+  function smoothRuns(pts, subdivisions) {
+    const WRAP_GAP = CELL * 2;
+    const runs = [];
+    let run = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i];
+      if (Math.abs(a.x - b.x) > WRAP_GAP || Math.abs(a.y - b.y) > WRAP_GAP) {
+        runs.push(run);
+        run = [b];
+      } else {
+        run.push(b);
+      }
+    }
+    runs.push(run);
+
+    let out = [];
+    for (const r of runs) {
+      out = out.concat(r.length >= 3 ? smoothPoints(r, subdivisions) : r);
+    }
+    return out;
+  }
+
+  function draw(now) {
+    // While running, tween toward the next cell. When stopped we snap to the
+    // CURRENT positions (t = 1) rather than the previous ones, so the game-over
+    // frame shows the snake where it actually collided instead of one step back.
+    let t = running ? Math.min((now - lastStepTime) / speed, 1) : 1;
+
+    ctx.save();
+    if (shake > 0) {
+      ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+    }
+
+    ctx.fillStyle = COLORS.board;
+    ctx.fillRect(-20, -20, canvas.width + 40, canvas.height + 40);
+    ctx.fillStyle = COLORS.gridDot;
+    for (let i = 0; i < GRID; i++) {
+      for (let j = 0; j < GRID; j++) {
+        ctx.fillRect(i * CELL + CELL / 2 - 1, j * CELL + CELL / 2 - 1, 2, 2);
+      }
+    }
+
+    // Playfield boundary. Dashed = pass-through edge (snake wraps here);
+    // solid = deadly wall. Drawn exactly at the collision/wrap boundary so
+    // there is no mystery gap between the visible edge and where the snake turns.
+    ctx.save();
+    ctx.strokeStyle = COLORS.bodyDark;
+    ctx.lineWidth = 2;
+    if (WRAP) ctx.setLineDash([6, 6]);
+    const inset = 1;
+    ctx.strokeRect(inset, inset, GRID * CELL - inset * 2, GRID * CELL - inset * 2);
+    ctx.restore();
+
+    obstacles.forEach(drawRock);
+    drawFoodItem(food, now, false);
+    if (bonus) drawFoodItem(bonus, now, true);
+
+    const frenzyGlow = frenzyUntil && now < frenzyUntil;
+    // Split the raw path into contiguous runs at wrap boundaries, smooth each
+    // run on its own (so Catmull-Rom never interpolates across the board), then
+    // stitch them back with wrap markers the body/head drawers understand.
+    const spine = smoothRuns(buildPath(t), 6);
+    drawSnakeBody(spine, now, frenzyGlow);
+    drawSnakeHead(spine, now);
+
+    drawParticles();
+    drawPopups();
+
+    // Live debug readout: head grid cell + last crash cause.
+    if (DEBUG) {
+      ctx.globalAlpha = 1;
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#0b2e0b";
+      ctx.font = '11px "Courier New", monospace';
+      const h = snake[0];
+      ctx.fillText(`head (${h.x},${h.y}) dir(${dir.x},${dir.y}) len ${snake.length}`, 6, 14);
+      if (lastCrashReason) ctx.fillText(`last: ${lastCrashReason}`, 6, 28);
+    }
+
+    // "READY" cue while the snake is holding for the first move
+    if (waiting) {
+      const blink = (Math.sin(now / 250) + 1) / 2;
+      ctx.globalAlpha = 0.35 + 0.5 * blink;
+      ctx.fillStyle = COLORS.bodyDark;
+      ctx.textAlign = "center";
+      ctx.font = 'bold 22px "Courier New", monospace';
+      ctx.fillText("READY", canvas.width / 2, canvas.height * 0.3);
+      ctx.font = '12px "Courier New", monospace';
+      ctx.fillText("press a direction", canvas.width / 2, canvas.height * 0.3 + 22);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+  }
+
+  function drawSnakeBody(spine, now, frenzy) {
+    const maxW = CELL * 0.82, minW = CELL * 0.28, n = spine.length;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    // Width taper is keyed to each point's index along the FULL spine (0 = head,
+    // 1 = tail), so splitting into runs doesn't change the taper.
+    const widthAt = (idx) =>
+      minW + (maxW - minW) * Math.pow(1 - idx / (n - 1), 0.65);
+
+    // When wrap-around sends the body across an edge, two consecutive spine
+    // points land on opposite sides of the board. Stroking straight between
+    // them draws a line across the whole field. So we skip any connector whose
+    // pixel gap is larger than one cell (a wrap), breaking the body into runs.
+    const WRAP_GAP = CELL * 2;
+    const isWrapJump = (a, b) =>
+      Math.abs(a.x - b.x) > WRAP_GAP || Math.abs(a.y - b.y) > WRAP_GAP;
+
+    for (let pass = 0; pass < 3; pass++) {
+      let color;
+      if (pass === 0) color = COLORS.bodyDark;
+      else if (pass === 1) color = frenzy ? "#2a7a2a" : COLORS.bodyMid;
+      else color = frenzy ? "#49b049" : COLORS.bodyLight;
+      ctx.strokeStyle = color;
+
+      for (let i = 0; i < n - 1; i++) {
+        const a = spine[i], b = spine[i + 1];
+        if (isWrapJump(a, b)) continue;      // don't connect across the wrap
+        let w = widthAt(i);
+        if (pass === 1) w *= 0.82;
+        else if (pass === 2) w *= 0.4;
+        ctx.lineWidth = w;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
+
+    ctx.fillStyle = COLORS.scale;
+    for (let i = 2; i < n - 2; i += 3) {
+      const w = widthAt(i) * 0.5;
+      const p = spine[i];
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-w / 2, -w / 2, w, w);
+      ctx.restore();
+    }
+  }
+
+  function drawSnakeHead(spine, now) {
+    const head = spine[0];
+    // Pick a reference point a few samples back for the facing angle, but only
+    // one that's on the same side of a wrap (close in pixels) so the head
+    // doesn't spin wildly while crossing an edge. Fall back to the heading.
+    const WRAP_GAP = CELL * 2;
+    let ref = null;
+    for (let k = 1; k <= 3 && k < spine.length; k++) {
+      const cand = spine[k];
+      if (Math.abs(head.x - cand.x) < WRAP_GAP && Math.abs(head.y - cand.y) < WRAP_GAP) {
+        ref = cand;
+      }
+    }
+    const ang = ref
+      ? Math.atan2(head.y - ref.y, head.x - ref.x)
+      : Math.atan2(dir.y, dir.x);
+
+    ctx.save();
+    ctx.translate(head.x, head.y);
+    ctx.rotate(ang);
+
+    const hw = CELL * 0.95, hh = CELL * 0.8;
+
+    ctx.fillStyle = COLORS.bodyDark;
+    ctx.beginPath();
+    ctx.ellipse(hw * 0.12, 0, hw * 0.55, hh * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = COLORS.bodyMid;
+    ctx.beginPath();
+    ctx.ellipse(hw * 0.12, 0, hw * 0.48, hh * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const flick = (Math.sin(now / 120) + 1) / 2;
+    if (flick > 0.5) {
+      const tLen = hw * (0.35 + flick * 0.35);
+      const base = hw * 0.55;
+      ctx.strokeStyle = COLORS.tongue;
+      ctx.lineWidth = Math.max(1.2, CELL * 0.07);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(base, 0);
+      ctx.lineTo(base + tLen * 0.6, 0);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(base + tLen * 0.6, 0);
+      ctx.lineTo(base + tLen, -CELL * 0.14);
+      ctx.moveTo(base + tLen * 0.6, 0);
+      ctx.lineTo(base + tLen, CELL * 0.14);
+      ctx.stroke();
+    }
+
+    const eyeX = hw * 0.1, eyeY = hh * 0.26, eyeR = CELL * 0.16;
+    for (const sy of [-1, 1]) {
+      ctx.fillStyle = COLORS.eye;
+      ctx.beginPath();
+      ctx.arc(eyeX, sy * eyeY, eyeR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = COLORS.pupil;
+      ctx.beginPath();
+      ctx.ellipse(eyeX + eyeR * 0.25, sy * eyeY, eyeR * 0.35, eyeR * 0.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = COLORS.bodyDark;
+    for (const sy of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(hw * 0.45, sy * hh * 0.12, CELL * 0.045, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  function drawFoodItem(item, now, isBonus) {
+    const px = cx(item.x), py = cx(item.y);
+    let r = CELL * 0.33;
+    const bob = Math.sin(now / 300 + item.x) * CELL * 0.05;
+
+    // Bonus items pulse and blink out near expiry
+    let alpha = 1;
+    if (isBonus) {
+      const age = now - item.bornAt;
+      const remain = item.ttl - age;
+      const pulse = 1 + Math.sin(now / 120) * 0.12;
+      r *= pulse;
+      if (remain < 1500) alpha = 0.4 + 0.6 * ((Math.sin(now / 90) + 1) / 2);
+    }
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(px, py + bob);
+
+    if (item.type === FOOD.APPLE) {
+      body(COLORS.appleBody, COLORS.appleShine);
+      stemAndLeaf();
+    } else if (item.type === FOOD.GOLD) {
+      // glow ring
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.3;
+      ctx.fillStyle = COLORS.gold;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      body(COLORS.gold, COLORS.goldShine);
+      stemAndLeaf();
+    } else { // berry: cluster of small circles
+      ctx.fillStyle = COLORS.berry;
+      const offs = [[-0.35, 0.1], [0.35, 0.1], [0, -0.3], [0, 0.35]];
+      for (const [ox, oy] of offs) {
+        ctx.beginPath();
+        ctx.arc(ox * r * 2, oy * r * 2, r * 0.55, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = COLORS.berryShine;
+      ctx.beginPath();
+      ctx.arc(-r * 0.3, -r * 0.3, r * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+
+    function body(fill, shine) {
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = shine;
+      ctx.beginPath();
+      ctx.ellipse(-r * 0.3, -r * 0.3, r * 0.3, r * 0.18, -0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    function stemAndLeaf() {
+      ctx.strokeStyle = COLORS.appleStem;
+      ctx.lineWidth = Math.max(1.5, CELL * 0.08);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 0.9);
+      ctx.lineTo(r * 0.18, -r * 1.35);
+      ctx.stroke();
+      ctx.fillStyle = COLORS.appleLeaf;
+      ctx.beginPath();
+      ctx.ellipse(r * 0.45, -r * 1.2, r * 0.4, r * 0.18, -0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawRock(o) {
+    const px = cx(o.x), py = cx(o.y), r = CELL * 0.42;
+    ctx.fillStyle = COLORS.rockDark;
+    ctx.beginPath();
+    ctx.ellipse(px, py + r * 0.35, r, r * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = COLORS.rock;
+    ctx.beginPath();
+    ctx.moveTo(px - r, py + r * 0.3);
+    ctx.lineTo(px - r * 0.5, py - r * 0.6);
+    ctx.lineTo(px + r * 0.2, py - r * 0.8);
+    ctx.lineTo(px + r, py - r * 0.1);
+    ctx.lineTo(px + r * 0.6, py + r * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = COLORS.rockLight;
+    ctx.beginPath();
+    ctx.moveTo(px - r * 0.4, py - r * 0.5);
+    ctx.lineTo(px + r * 0.1, py - r * 0.7);
+    ctx.lineTo(px + r * 0.2, py - r * 0.2);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawPopups() {
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.popup;
+    for (const u of popups) {
+      ctx.globalAlpha = Math.max(0, Math.min(1, u.life));
+      ctx.font = (u.big ? "bold 26px" : "bold 15px") + ' "Courier New", monospace';
+      ctx.fillText(u.text, u.x, u.y);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---- Audio (Web Audio API) ----------------------------------------------
+  function ensureAudio() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  }
+
+  function tone(freq, dur, type, gain) {
+    if (muted || !audioCtx) return;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type || "square";
+    o.frequency.value = freq;
+    g.gain.value = gain || 0.05;
+    o.connect(g).connect(audioCtx.destination);
+    const t0 = audioCtx.currentTime;
+    o.start(t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.stop(t0 + dur);
+  }
+
+  function sound(kind) {
+    if (muted) return;
+    ensureAudio();
+    if (!audioCtx) return;
+    switch (kind) {
+      case "eat":   tone(620, 0.09, "square", 0.05); break;
+      case "gold":  tone(760, 0.08, "square", 0.06); setTimeout(() => tone(1040, 0.1, "square", 0.06), 70); break;
+      case "berry": tone(880, 0.07, "sawtooth", 0.05); setTimeout(() => tone(660, 0.09, "sawtooth", 0.05), 60); break;
+      case "level": [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, 0.12, "square", 0.06), i * 90)); break;
+      case "crash": tone(140, 0.3, "sawtooth", 0.08); setTimeout(() => tone(90, 0.3, "sawtooth", 0.08), 80); break;
+    }
+  }
+
+  function updateMuteLabel() {
+    muteBtn.textContent = "SOUND: " + (muted ? "OFF" : "ON");
+  }
+
+  function toggleMute() {
+    muted = !muted;
+    localStorage.setItem("snake_muted", muted ? "1" : "0");
+    updateMuteLabel();
+    if (!muted) ensureAudio();
+  }
+
+  // ---- Loop ----------------------------------------------------------------
+  let lastFrame = 0;
+  function frame(now) {
+    if (!lastFrame) lastFrame = now;
+    const dt = now - lastFrame;
+    lastFrame = now;
+
+    // Advance AT MOST ONE logical step per frame. The snake must never jump
+    // several cells in a single frame: that skips the frames where a queued
+    // turn would apply and makes the snake plow into walls/itself "instantly".
+    // Any leftover backlog is dropped by re-basing lastStepTime to `now`.
+    // While waiting for the player's first move, the snake stays put so it
+    // can't drive into a wall before they've had a chance to steer.
+    if (running && !waiting && now - lastStepTime >= speed) {
+      step(now);
+      lastStepTime = now;   // re-base so a shrinking `speed` can't owe many steps
+    }
+
+    // Only advance effects while playing, and clamp dt so a long frame gap
+    // (backgrounded tab) can't fling particles across the board.
+    if (running) updateEffects(Math.min(dt, 50));
+    draw(now);
+    rafId = requestAnimationFrame(frame);
+  }
+
+  function start() {
+    ensureAudio();
+    if (running) return;
+    if (gameOver) reset();
+    running = true;
+    waiting = true;              // hold still until the first directional input
+    lastStepTime = performance.now();
+    overlay.classList.add("hidden");
+  }
+
+  function pause() {
+    if (!running || gameOver) return;
+    running = false;
+    showOverlay("PAUSED", "Press SPACE to resume");
+  }
+
+  function end() {
+    running = false;
+    gameOver = true;
+    if (score > best) {
+      best = score;
+      localStorage.setItem("snake_best", String(best));
+      bestEl.textContent = best;
+    }
+    showOverlay("GAME OVER",
+      `Score: ${score} &nbsp;•&nbsp; Level ${level}<br />Press SPACE to play again`);
+  }
+
+  function showOverlay(title, text) {
+    overlayTitle.textContent = title;
+    overlayText.innerHTML = text;
+    overlay.classList.remove("hidden");
+  }
+
+  function togglePause() {
+    if (gameOver || !running) start();
+    else pause();
+  }
+
+  function setDir(x, y) {
+    // Any directional key starts a fresh game / resumes.
+    if (!running && !gameOver) start();
+
+    // First directional input releases the "ready" hold. The snake can't
+    // reverse into its own body on move one, so if the player presses the
+    // reverse of the starting heading we just launch in the current heading.
+    if (waiting) {
+      waiting = false;
+      lastStepTime = performance.now();
+      if (!(x === -dir.x && y === -dir.y)) dir = { x, y };
+      return;
+    }
+
+    // Compare against the last committed direction (end of the queue, or the
+    // current heading if the queue is empty) so a fast double-tap can never
+    // queue a move that reverses into the snake's own neck.
+    const ref = dirQueue.length ? dirQueue[dirQueue.length - 1] : dir;
+    if (x === -ref.x && y === -ref.y) return;   // no reversing
+    if (x === ref.x && y === ref.y) return;     // ignore no-op repeats
+    if (dirQueue.length >= 2) return;           // buffer at most two turns
+    dirQueue.push({ x, y });
+  }
+
+  // ---- Input ---------------------------------------------------------------
+  window.addEventListener("keydown", (e) => {
+    switch (e.key) {
+      case "ArrowUp": case "w": case "W": setDir(0, -1); e.preventDefault(); break;
+      case "ArrowDown": case "s": case "S": setDir(0, 1); e.preventDefault(); break;
+      case "ArrowLeft": case "a": case "A": setDir(-1, 0); e.preventDefault(); break;
+      case "ArrowRight": case "d": case "D": setDir(1, 0); e.preventDefault(); break;
+      case "m": case "M": toggleMute(); e.preventDefault(); break;
+      case " ": case "p": case "P":
+        if (!running && !gameOver && snake) start();
+        else togglePause();
+        e.preventDefault();
+        break;
+    }
+  });
+
+  screen.addEventListener("click", () => { if (!running) start(); });
+  muteBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleMute(); });
+
+  reset();
+  rafId = requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
