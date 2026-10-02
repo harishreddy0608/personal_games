@@ -18,13 +18,17 @@
 
   html, body {
     margin: 0;
-    height: 100%;
+    min-height: 100%;
     background: var(--bg);
     color: var(--lcd);
     font-family: "Courier New", monospace;
     display: flex;
     align-items: center;
     justify-content: center;
+    /* Stop the page from scrolling / pull-to-refresh / pinch-zoom on swipes. */
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
     user-select: none;
   }
 
@@ -34,17 +38,21 @@
     border-radius: 16px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), inset 0 0 0 2px #26381f;
     text-align: center;
+    max-width: 96vw;
   }
 
-  .developer { font-size: 10px; letter-spacing: 1px; color: var(--lcd-dim); margin-left: 12px; }
+  @media (max-width: 520px) {
+    .machine { padding: 14px; }
+    .title { font-size: 16px; letter-spacing: 3px; }
+    .hud { font-size: 11px; }
+    .hint { font-size: 10px; }
+  }
 
   .titlebar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 12px;
-    flex-wrap: wrap;
-    gap: 8px;
   }
 
   .title {
@@ -90,10 +98,12 @@
   canvas {
     display: block;
     background: var(--lcd);
-    /* Lock displayed size to the drawing buffer so the field is never
-       stretched out of proportion by page zoom or layout. */
-    width: 440px;
-    height: 440px;
+    /* Square and responsive: full 440px on desktop, shrinks to fit narrow
+       phones. The drawing buffer stays 440x440 so game logic is unchanged;
+       only the displayed size scales, kept square so it's never distorted. */
+    width: min(440px, 86vw);
+    height: min(440px, 86vw);
+    touch-action: none;
   }
 
   .overlay {
@@ -131,7 +141,6 @@
   <div class="machine">
     <div class="titlebar">
       <div class="title">Snake</div>
-      <div class="developer">DEVELOPER: HARISH REDDY</div>
       <button class="mute-btn" id="mute">SOUND: ON</button>
     </div>
     <div class="hud">
@@ -146,6 +155,7 @@
         <div class="big" id="overlay-title">SNAKE</div>
         <div class="small" id="overlay-text">
           Eat apples, dodge rocks, don't bite yourself<br />
+          Grab an EGG to smash through rocks for a few seconds<br />
           Edges wrap around &mdash; glide through and reappear<br /><br />
           Press an ARROW key or WASD to begin<br />
           (the snake waits for your first move)
@@ -153,8 +163,8 @@
       </div>
     </div>
     <div class="hint">
-      SPACE / P = pause &nbsp;•&nbsp; ARROWS / WASD = move &nbsp;•&nbsp; M = mute<br />
-      GOLD apple = big points &nbsp;•&nbsp; BERRY = speed frenzy &nbsp;•&nbsp; chain eats for combo
+      ARROWS / WASD or SWIPE = move &nbsp;•&nbsp; SPACE / P = pause &nbsp;•&nbsp; M = mute<br />
+      GOLD = big points &nbsp;•&nbsp; BERRY = speed frenzy &nbsp;•&nbsp; EGG = smash rocks &nbsp;•&nbsp; chain eats for combo
     </div>
   </div>
 
@@ -198,6 +208,10 @@
     goldShine: "rgba(255,255,255,0.55)",
     berry: "#7a2d6b",
     berryShine: "rgba(255,255,255,0.4)",
+    egg: "#f3ead2",
+    eggDark: "#d9c9a3",
+    eggShine: "rgba(255,255,255,0.75)",
+    smashGlow: "#f3ead2",
     rock: "#4a4a2a",
     rockDark: "#2e2e16",
     rockLight: "#6a6a44",
@@ -209,6 +223,7 @@
     APPLE: "apple",   // normal, permanent until eaten
     GOLD:  "gold",    // bonus points, expires
     BERRY: "berry",   // speed frenzy, expires
+    EGG:   "egg",     // grants rock-smashing power, expires
   };
 
   // ---- Game state ----------------------------------------------------------
@@ -216,6 +231,8 @@
   let score, best, level, applesThisLevel, speed, baseSpeed;
   let combo, comboTimer;          // combo multiplier state
   let frenzyUntil = 0;            // timestamp while speed frenzy active
+  let smashUntil = 0;             // timestamp while rock-smash power is active
+  const SMASH_MS = 6000;          // how long the egg power lasts
   let running, gameOver;
   let waiting = false;            // true after start until the first move input
   let lastStepTime = 0;
@@ -255,6 +272,7 @@
     combo = 0;
     comboTimer = 0;
     frenzyUntil = 0;
+    smashUntil = 0;
     gameOver = false;
     waiting = false;
     obstacles = [];
@@ -297,10 +315,19 @@
 
   function maybeSpawnBonus(now) {
     if (bonus) return;
-    // Small chance each step to spawn a timed bonus item
+    // Small chance each step to spawn a timed bonus item.
     if (Math.random() < 0.04) {
-      const type = Math.random() < 0.5 ? FOOD.GOLD : FOOD.BERRY;
-      bonus = { ...randFreeCell(), type, bornAt: now, ttl: 6000 };
+      let type;
+      // Eggs are rare and only appear once there are rocks to smash. Roll for a
+      // rare egg first; otherwise it's an even gold/berry pick.
+      if (obstacles.length && Math.random() < 0.12) {
+        type = FOOD.EGG;
+      } else {
+        type = Math.random() < 0.5 ? FOOD.GOLD : FOOD.BERRY;
+      }
+      // The egg is a fleeting power-up: shorter life than the point bonuses.
+      const ttl = type === FOOD.EGG ? 4000 : 6000;
+      bonus = { ...randFreeCell(), type, bornAt: now, ttl };
     }
   }
 
@@ -359,8 +386,17 @@
     } else if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID) {
       return crash(`WALL @ (${head.x},${head.y}) dir(${dir.x},${dir.y})`);
     }
-    const hitRock = obstacles.find(o => o.x === head.x && o.y === head.y);
-    if (hitRock) return crash(`ROCK @ (${head.x},${head.y})`);
+    const hitRockIdx = obstacles.findIndex(o => o.x === head.x && o.y === head.y);
+    if (hitRockIdx !== -1) {
+      if (smashUntil && now < smashUntil) {
+        // Smash power active: destroy the rock and plow through it.
+        const rock = obstacles[hitRockIdx];
+        obstacles.splice(hitRockIdx, 1);
+        smashRock(rock, now);
+      } else {
+        return crash(`ROCK @ (${head.x},${head.y})`);
+      }
+    }
 
     // Will we grow this step? (apple or bonus eaten -> tail stays put)
     const willEat =
@@ -411,6 +447,12 @@
       recomputeSpeed();
     }
 
+    // Smash power expiry
+    if (smashUntil && now > smashUntil) smashUntil = 0;
+
+    // Uneaten bonus item times out and vanishes.
+    if (bonus && now - bonus.bornAt >= bonus.ttl) bonus = null;
+
     if (!bonus) maybeSpawnBonus(now);
   }
 
@@ -423,6 +465,7 @@
     let base;
     if (type === FOOD.APPLE) base = 10;
     else if (type === FOOD.GOLD) base = 50;
+    else if (type === FOOD.EGG) base = 30;
     else base = 20; // berry
 
     const gained = base * mult;
@@ -441,8 +484,31 @@
       frenzyUntil = now + 4000;       // 4s speed burst
       recomputeSpeed();
       sound("berry");
+    } else if (type === FOOD.EGG) {
+      smashUntil = now + SMASH_MS;    // rock-smashing power
+      popups.push({ x: cx(at.x), y: cx(at.y) - CELL, text: "SMASH!", life: 1.2, born: now });
+      sound("egg");
     }
 
+    updateHUD();
+  }
+
+  // Rock destroyed by the smash power: burst of debris + points + a cue.
+  function smashRock(rock, now) {
+    const px = cx(rock.x), py = cx(rock.y);
+    for (let i = 0; i < 16; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 0.8 + Math.random() * 2.4;
+      particles.push({
+        x: px, y: py,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        life: 1, color: COLORS.rockLight, r: 1.5 + Math.random() * 3,
+      });
+    }
+    score += 15;
+    popups.push({ x: px, y: py, text: "+15", life: 1, born: now });
+    shake = Math.max(shake, 6);
+    sound("smash");
     updateHUD();
   }
 
@@ -474,6 +540,7 @@
   function spawnParticles(x, y, type) {
     const color = type === FOOD.GOLD ? COLORS.gold
                 : type === FOOD.BERRY ? COLORS.berry
+                : type === FOOD.EGG ? COLORS.eggDark
                 : COLORS.appleBody;
     const count = type === FOOD.APPLE ? 10 : 18;
     for (let i = 0; i < count; i++) {
@@ -616,10 +683,12 @@
     if (bonus) drawFoodItem(bonus, now, true);
 
     const frenzyGlow = frenzyUntil && now < frenzyUntil;
+    const smashActive = smashUntil && now < smashUntil;
     // Split the raw path into contiguous runs at wrap boundaries, smooth each
     // run on its own (so Catmull-Rom never interpolates across the board), then
     // stitch them back with wrap markers the body/head drawers understand.
     const spine = smoothRuns(buildPath(t), 6);
+    if (smashActive) drawSmashAura(spine, now);
     drawSnakeBody(spine, now, frenzyGlow);
     drawSnakeHead(spine, now);
 
@@ -650,6 +719,43 @@
       ctx.globalAlpha = 1;
     }
 
+    // SMASH power timer bar across the top of the board.
+    if (smashUntil && now < smashUntil) {
+      const frac = (smashUntil - now) / SMASH_MS;
+      const w = canvas.width * frac;
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = COLORS.bodyDark;
+      ctx.fillRect(0, 0, canvas.width, 5);
+      ctx.fillStyle = COLORS.smashGlow;
+      ctx.fillRect(0, 0, w, 5);
+      ctx.fillStyle = COLORS.bodyDark;
+      ctx.textAlign = "left";
+      ctx.font = 'bold 11px "Courier New", monospace';
+      ctx.fillText("SMASH", 6, 18);
+    }
+
+    ctx.restore();
+  }
+
+  // Pulsing glowing outline behind the snake while the smash power is active.
+  function drawSmashAura(spine, now) {
+    const n = spine.length;
+    const pulse = 0.5 + 0.5 * Math.sin(now / 110);
+    const WRAP_GAP = CELL * 2;
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = COLORS.smashGlow;
+    ctx.globalAlpha = 0.35 + 0.35 * pulse;
+    ctx.lineWidth = CELL * (1.0 + 0.15 * pulse);
+    for (let i = 0; i < n - 1; i++) {
+      const a = spine[i], b = spine[i + 1];
+      if (Math.abs(a.x - b.x) > WRAP_GAP || Math.abs(a.y - b.y) > WRAP_GAP) continue;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -789,7 +895,9 @@
       const remain = item.ttl - age;
       const pulse = 1 + Math.sin(now / 120) * 0.12;
       r *= pulse;
-      if (remain < 1500) alpha = 0.4 + 0.6 * ((Math.sin(now / 90) + 1) / 2);
+      // Start the warning blink in the final third of the item's life, so it
+      // reads well for both the short egg and the longer point bonuses.
+      if (remain < item.ttl * 0.35) alpha = 0.4 + 0.6 * ((Math.sin(now / 90) + 1) / 2);
     }
 
     ctx.save();
@@ -810,6 +918,34 @@
       ctx.restore();
       body(COLORS.gold, COLORS.goldShine);
       stemAndLeaf();
+    } else if (item.type === FOOD.EGG) {
+      // soft glow so the power-up stands out
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.25;
+      ctx.fillStyle = COLORS.smashGlow;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r * 1.4, r * 1.7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      // egg body: a vertical oval, wider at the bottom
+      ctx.fillStyle = COLORS.egg;
+      ctx.beginPath();
+      ctx.ellipse(0, r * 0.1, r * 0.72, r * 1.0, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // subtle shaded underside
+      ctx.fillStyle = COLORS.eggDark;
+      ctx.beginPath();
+      ctx.ellipse(r * 0.18, r * 0.42, r * 0.42, r * 0.5, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = COLORS.egg;
+      ctx.beginPath();
+      ctx.ellipse(-r * 0.05, r * 0.05, r * 0.6, r * 0.85, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // highlight
+      ctx.fillStyle = COLORS.eggShine;
+      ctx.beginPath();
+      ctx.ellipse(-r * 0.25, -r * 0.4, r * 0.2, r * 0.3, -0.4, 0, Math.PI * 2);
+      ctx.fill();
     } else { // berry: cluster of small circles
       ctx.fillStyle = COLORS.berry;
       const offs = [[-0.35, 0.1], [0.35, 0.1], [0, -0.3], [0, 0.35]];
@@ -928,6 +1064,8 @@
       case "eat":   tone(620, 0.09, "square", 0.05); break;
       case "gold":  tone(760, 0.08, "square", 0.06); setTimeout(() => tone(1040, 0.1, "square", 0.06), 70); break;
       case "berry": tone(880, 0.07, "sawtooth", 0.05); setTimeout(() => tone(660, 0.09, "sawtooth", 0.05), 60); break;
+      case "egg":   tone(500, 0.08, "triangle", 0.06); setTimeout(() => tone(820, 0.12, "triangle", 0.06), 70); break;
+      case "smash": tone(200, 0.12, "square", 0.07); setTimeout(() => tone(120, 0.14, "sawtooth", 0.07), 40); break;
       case "level": [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, 0.12, "square", 0.06), i * 90)); break;
       case "crash": tone(140, 0.3, "sawtooth", 0.08); setTimeout(() => tone(90, 0.3, "sawtooth", 0.08), 80); break;
     }
@@ -1050,6 +1188,37 @@
 
   screen.addEventListener("click", () => { if (!running) start(); });
   muteBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleMute(); });
+
+  // ---- Touch / swipe steering ---------------------------------------------
+  // Swipe anywhere on the board to steer. A short tap (no real movement) just
+  // starts the game, matching the click-to-start behaviour on desktop.
+  let touchStart = null;
+  const SWIPE_MIN = 20;   // px of travel before it counts as a swipe
+
+  screen.addEventListener("touchstart", (e) => {
+    const t = e.changedTouches[0];
+    touchStart = { x: t.clientX, y: t.clientY };
+  }, { passive: true });
+
+  // Block the default scroll/pull-to-refresh while a finger is on the board.
+  screen.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
+
+  screen.addEventListener("touchend", (e) => {
+    if (!touchStart) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStart.x;
+    const dy = t.clientY - touchStart.y;
+    touchStart = null;
+
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE_MIN) {
+      // Treated as a tap: start the game if it isn't running.
+      if (!running) start();
+      return;
+    }
+    // Dominant axis decides the direction.
+    if (Math.abs(dx) > Math.abs(dy)) setDir(dx > 0 ? 1 : -1, 0);
+    else setDir(0, dy > 0 ? 1 : -1);
+  }, { passive: true });
 
   reset();
   rafId = requestAnimationFrame(frame);
