@@ -84,6 +84,8 @@
   }
   .thumb.snake { background: #9bbc0f; }
   .thumb.p2048 { background: #bbada0; }
+  .thumb.sal { background: #241536; }
+  .thumb.bj { background: #0b5d2e; }
   .thumb svg { width: 78%; height: 78%; }
   .card .name {
     font-size: 20px;
@@ -121,7 +123,7 @@
 <body>
   <div class="shell">
     <h1 class="logo">Arcade</h1>
-    <div class="tagline">TWO GAMES &bull; ONE SCREEN</div>
+    <div class="tagline">FOUR GAMES &bull; ONE SCREEN</div>
 
     <div class="grid">
       <a class="card" href="snake.html">
@@ -152,6 +154,48 @@
         </div>
         <div class="name">2048</div>
         <div class="desc">Slide, merge, reach 2048</div>
+      </a>
+
+      <a class="card" href="snakes-and-ladders.html">
+        <div class="thumb sal">
+          <!-- board with a snake and a ladder -->
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <rect x="10" y="10" width="80" height="80" rx="8" fill="#3d2a5e"/>
+            <!-- ladder -->
+            <g stroke="#06d6a0" stroke-width="4" stroke-linecap="round">
+              <line x1="30" y1="78" x2="40" y2="24"/>
+              <line x1="40" y1="78" x2="50" y2="24"/>
+              <line x1="32" y1="68" x2="43" y2="68"/>
+              <line x1="34" y1="54" x2="45" y2="54"/>
+              <line x1="36" y1="40" x2="47" y2="40"/>
+            </g>
+            <!-- snake -->
+            <path d="M70 26 Q58 40 70 54 Q82 68 68 80" fill="none"
+                  stroke="#ef476f" stroke-width="6" stroke-linecap="round"/>
+            <circle cx="70" cy="26" r="6" fill="#ef476f"/>
+            <circle cx="68" cy="24" r="1.6" fill="#fff"/>
+          </svg>
+        </div>
+        <div class="name">S &amp; L</div>
+        <div class="desc">Roll, climb ladders, dodge snakes</div>
+      </a>
+
+      <a class="card" href="blackjack.html">
+        <div class="thumb bj">
+          <!-- two cards: ace + king -->
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <rect x="18" y="24" width="42" height="58" rx="6" fill="#fdfdfb" transform="rotate(-10 39 53)"/>
+            <rect x="42" y="22" width="42" height="58" rx="6" fill="#fdfdfb" transform="rotate(8 63 51)"/>
+            <text x="39" y="56" text-anchor="middle" dominant-baseline="central"
+                  font-family="Arial, sans-serif" font-weight="800" font-size="22"
+                  fill="#1a1a1a" transform="rotate(-10 39 53)">A&#9824;</text>
+            <text x="63" y="54" text-anchor="middle" dominant-baseline="central"
+                  font-family="Arial, sans-serif" font-weight="800" font-size="22"
+                  fill="#c62828" transform="rotate(8 63 51)">K&#9829;</text>
+          </svg>
+        </div>
+        <div class="name">Blackjack</div>
+        <div class="desc">Bet, hit or stand, beat the dealer</div>
       </a>
     </div>
 

@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#2a1a3e" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Snakes & Ladders" />
+<title>Snakes &amp; Ladders</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: radial-gradient(circle at 50% 0%, #3a2458 0%, #1b1030 70%);
+    color: #f3e9d2;
+    font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .wrap { width: 100%; max-width: 520px; text-align: center; }
+
+  h1 {
+    margin: 0 0 2px;
+    font-size: clamp(22px, 6vw, 32px);
+    letter-spacing: 1px;
+    color: #ffd166;
+    text-shadow: 0 2px 0 #00000055;
+  }
+  .sub { font-size: 12px; opacity: 0.75; margin-bottom: 10px; letter-spacing: 1px; }
+
+  .status {
+    font-size: 15px;
+    font-weight: bold;
+    min-height: 22px;
+    margin-bottom: 10px;
+    letter-spacing: 0.5px;
+  }
+  .status .you { color: #06d6a0; }
+  .status .cpu { color: #ef476f; }
+
+  canvas#board {
+    display: block;
+    width: min(460px, 92vw);
+    height: min(460px, 92vw);
+    margin: 0 auto;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px #0008, 0 0 0 4px #ffd16633;
+    background: #241536;
+  }
+
+  .controls {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+  }
+
+  canvas#die {
+    width: 64px; height: 64px;
+    filter: drop-shadow(0 4px 6px #0007);
+    cursor: pointer;
+  }
+
+  .btn {
+    background: linear-gradient(#ffd166, #f0a500);
+    color: #3a2458;
+    border: none;
+    border-radius: 10px;
+    padding: 14px 22px;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    cursor: pointer;
+    font-family: inherit;
+    box-shadow: 0 4px 0 #b97d00;
+    transition: transform 80ms, box-shadow 80ms;
+  }
+  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #b97d00; }
+  .btn:disabled { opacity: 0.5; cursor: default; box-shadow: 0 4px 0 #b97d00; }
+
+  .btn.secondary {
+    background: linear-gradient(#8a7bb0, #5f4f86);
+    color: #fff;
+    box-shadow: 0 4px 0 #3b2f5c;
+    padding: 12px 16px;
+    font-size: 13px;
+  }
+  .btn.secondary:active { transform: translateY(3px); box-shadow: 0 1px 0 #3b2f5c; }
+
+  .legend {
+    margin-top: 14px;
+    font-size: 12px;
+    opacity: 0.8;
+    line-height: 1.6;
+  }
+  .legend b.l { color: #06d6a0; }
+  .legend b.s { color: #ef476f; }
+
+  .topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px;
+  }
+  .home { color: #ffd166; text-decoration: none; font-size: 13px; opacity: 0.85; }
+  .home:hover { opacity: 1; }
+  .mute { background: none; border: 1px solid #ffffff33; color: #f3e9d2;
+    border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; font-family: inherit; }
+
+  /* ---- Setup screen ---- */
+  .setup {
+    background: #2a1a44;
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 10px 30px #0007, 0 0 0 3px #ffd16633;
+    text-align: left;
+  }
+  .setup h2 {
+    margin: 0 0 14px; text-align: center; color: #ffd166;
+    font-size: 20px; letter-spacing: 1px;
+  }
+  .setup .q { font-size: 14px; letter-spacing: 0.5px; margin-bottom: 8px; text-align: center; opacity: 0.9; }
+  .count-row { display: flex; gap: 8px; justify-content: center; margin-bottom: 18px; }
+  .count-btn {
+    width: 54px; height: 54px; border-radius: 10px;
+    border: 2px solid #ffffff33; background: #3d2a5e; color: #f3e9d2;
+    font-size: 20px; font-weight: 800; cursor: pointer; font-family: inherit;
+    transition: transform 80ms;
+  }
+  .count-btn.active { background: #ffd166; color: #2a1a44; border-color: #ffd166; }
+  .count-btn:active { transform: scale(0.94); }
+
+  .players-setup { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+  .psetup-row { display: flex; align-items: center; gap: 10px; }
+  .psetup-row .idx { width: 20px; font-weight: 800; color: #ffd166; }
+  .psetup-row input[type="text"] {
+    flex: 1; min-width: 0; background: #241536; border: 1px solid #ffffff33;
+    color: #f3e9d2; border-radius: 8px; padding: 10px 12px; font-size: 15px; font-family: inherit;
+  }
+  .psetup-row input[type="text"]:focus { outline: none; border-color: #ffd166; }
+  .swatches { display: flex; gap: 5px; }
+  .swatch {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 3px solid transparent; cursor: pointer; box-shadow: 0 2px 4px #0005;
+  }
+  .swatch.sel { border-color: #fff; transform: scale(1.12); }
+  .cpu-tag { font-size: 11px; opacity: 0.7; font-style: italic; }
+
+  .setup .start {
+    display: block; width: 100%;
+    background: linear-gradient(#ffd166, #f0a500); color: #2a1a44;
+    border: none; border-radius: 10px; padding: 15px; font-size: 17px; font-weight: 800;
+    letter-spacing: 1px; cursor: pointer; font-family: inherit; box-shadow: 0 4px 0 #b97d00;
+  }
+  .setup .start:active { transform: translateY(3px); box-shadow: 0 1px 0 #b97d00; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <a class="home" href="index.html">&larr; Arcade</a>
+      <button class="mute" id="mute">SOUND: ON</button>
+    </div>
+    <h1>Snakes &amp; Ladders</h1>
+    <div class="sub" id="sub">FIRST TO 100</div>
+
+    <!-- Setup screen -->
+    <div class="setup" id="setup">
+      <h2>Game Setup</h2>
+      <div class="q">How many players?</div>
+      <div class="count-row" id="countRow">
+        <button class="count-btn" data-n="1">1</button>
+        <button class="count-btn" data-n="2">2</button>
+        <button class="count-btn" data-n="3">3</button>
+        <button class="count-btn" data-n="4">4</button>
+      </div>
+      <div class="players-setup" id="playersSetup"></div>
+      <button class="start" id="startBtn">Start Game</button>
+    </div>
+
+    <!-- Game screen -->
+    <div id="game" class="hidden">
+      <div class="status" id="status">Tap ROLL to start</div>
+
+      <canvas id="board" width="500" height="500"></canvas>
+
+      <div class="controls">
+        <canvas id="die" width="100" height="100" title="Roll"></canvas>
+        <button class="btn" id="roll">ROLL</button>
+        <button class="btn secondary" id="new">New Game</button>
+      </div>
+
+      <div class="legend">
+        <b class="l">Ladders</b> lift you up &nbsp;&bull;&nbsp; <b class="s">Snakes</b> slide you down
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const boardCanvas = document.getElementById("board");
+  const bctx = boardCanvas.getContext("2d");
+  const dieCanvas = document.getElementById("die");
+  const dctx = dieCanvas.getContext("2d");
+  const statusEl = document.getElementById("status");
+  const rollBtn = document.getElementById("roll");
+  const newBtn = document.getElementById("new");
+  const muteBtn = document.getElementById("mute");
+  const setupEl = document.getElementById("setup");
+  const gameEl = document.getElementById("game");
+  const subEl = document.getElementById("sub");
+  const countRow = document.getElementById("countRow");
+  const playersSetup = document.getElementById("playersSetup");
+  const startBtn = document.getElementById("startBtn");
+
+  const N = 10;                       // 10x10
+  const SIZE = boardCanvas.width;     // 500
+  const CELL = SIZE / N;              // 50
+
+  // Snakes and ladders: { from: to }. Ladders go up (to > from), snakes down.
+  const LADDERS = { 4: 25, 13: 46, 33: 49, 42: 63, 50: 69, 62: 81, 74: 92 };
+  const SNAKES  = { 27: 5, 40: 19, 54: 31, 66: 45, 76: 58, 89: 53, 99: 41, 95: 72 };
+
+  // Pleasant per-cell palette (two alternating warm/cool tones).
+  const CELL_A = "#3d2a5e";
+  const CELL_B = "#4a3570";
+  const SNAKE_COLORS = ["#ef476f", "#f78c6b", "#c1121f", "#e5383b"];
+  const LADDER_COLOR = "#06d6a0";
+  const LADDER_RAIL = "#048c6a";
+
+  // Marker color choices offered in setup.
+  const MARKER_COLORS = ["#06d6a0", "#ef476f", "#ffd166", "#4895ef", "#b388ff", "#ff8c42"];
+  const DEFAULT_NAMES = ["Player 1", "Player 2", "Player 3", "Player 4"];
+
+  // Players: built from the setup screen. Each: { name, color, pos, isCPU }.
+  let players = [];
+  let numPlayers = 1;         // chosen on setup
+  let chosenColors = [];      // color index per player row
+  let turn = 0;               // index into players
+  let busy = false;           // animating
+  let gameOver = false;
+  let dieValue = 1;
+
+  // ---- Board geometry ------------------------------------------------------
+  // Square 1 is bottom-left; numbering snakes (boustrophedon) up the board.
+  function cellCenter(square) {
+    // square 1..100 -> x,y pixel center
+    const idx = square - 1;
+    const row = Math.floor(idx / N);          // 0 at bottom
+    let col = idx % N;
+    if (row % 2 === 1) col = N - 1 - col;      // reverse on alternate rows
+    const x = col * CELL + CELL / 2;
+    const y = SIZE - (row * CELL + CELL / 2);  // invert so row 0 is at bottom
+    return { x, y };
+  }
+
+  // ---- Drawing -------------------------------------------------------------
+  function drawBoard() {
+    bctx.clearRect(0, 0, SIZE, SIZE);
+
+    // cells + numbers
+    for (let sq = 1; sq <= 100; sq++) {
+      const { x, y } = cellCenter(sq);
+      const idx = sq - 1;
+      const row = Math.floor(idx / N);
+      const col = idx % N;
+      bctx.fillStyle = (row + col) % 2 === 0 ? CELL_A : CELL_B;
+      bctx.fillRect(x - CELL / 2, y - CELL / 2, CELL, CELL);
+      // number
+      bctx.fillStyle = "#ffffff66";
+      bctx.font = "11px 'Trebuchet MS', sans-serif";
+      bctx.textAlign = "left";
+      bctx.textBaseline = "top";
+      bctx.fillText(sq, x - CELL / 2 + 4, y - CELL / 2 + 3);
+    }
+
+    // ladders
+    for (const from in LADDERS) {
+      drawLadder(Number(from), LADDERS[from]);
+    }
+    // snakes
+    let si = 0;
+    for (const from in SNAKES) {
+      drawSnake(Number(from), SNAKES[from], SNAKE_COLORS[si % SNAKE_COLORS.length]);
+      si++;
+    }
+
+    // start / finish flourish
+    const fin = cellCenter(100);
+    bctx.fillStyle = "#ffd166";
+    bctx.font = "bold 13px 'Trebuchet MS', sans-serif";
+    bctx.textAlign = "center";
+    bctx.textBaseline = "middle";
+    bctx.fillText("★100", fin.x, fin.y + 8);
+  }
+
+  function drawLadder(from, to) {
+    const a = cellCenter(from);
+    const b = cellCenter(to);
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    const ux = dx / len, uy = dy / len;        // unit along ladder
+    const px = -uy, py = ux;                    // perpendicular
+    const railGap = 7;
+
+    bctx.strokeStyle = LADDER_RAIL;
+    bctx.lineWidth = 4;
+    bctx.lineCap = "round";
+    // two rails
+    for (const s of [-1, 1]) {
+      bctx.beginPath();
+      bctx.moveTo(a.x + px * railGap * s, a.y + py * railGap * s);
+      bctx.lineTo(b.x + px * railGap * s, b.y + py * railGap * s);
+      bctx.stroke();
+    }
+    // rungs
+    bctx.strokeStyle = LADDER_COLOR;
+    bctx.lineWidth = 3;
+    const rungs = Math.max(2, Math.floor(len / 22));
+    for (let i = 0; i <= rungs; i++) {
+      const t = i / rungs;
+      const cx = a.x + dx * t, cy = a.y + dy * t;
+      bctx.beginPath();
+      bctx.moveTo(cx + px * railGap, cy + py * railGap);
+      bctx.lineTo(cx - px * railGap, cy - py * railGap);
+      bctx.stroke();
+    }
+  }
+
+  function drawSnake(from, to, color) {
+    const a = cellCenter(from);   // head (high number)
+    const b = cellCenter(to);     // tail (low number)
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    const ux = dx / len, uy = dy / len;
+    const px = -uy, py = ux;
+
+    // wavy body
+    bctx.strokeStyle = color;
+    bctx.lineWidth = 9;
+    bctx.lineCap = "round";
+    bctx.beginPath();
+    const segs = Math.max(6, Math.floor(len / 16));
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      const wave = Math.sin(t * Math.PI * 3) * 9;
+      const x = a.x + dx * t + px * wave;
+      const y = a.y + dy * t + py * wave;
+      if (i === 0) bctx.moveTo(x, y);
+      else bctx.lineTo(x, y);
+    }
+    bctx.stroke();
+
+    // body highlight
+    bctx.strokeStyle = "#ffffff44";
+    bctx.lineWidth = 3;
+    bctx.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      const wave = Math.sin(t * Math.PI * 3) * 9;
+      const x = a.x + dx * t + px * wave;
+      const y = a.y + dy * t + py * wave;
+      if (i === 0) bctx.moveTo(x, y);
+      else bctx.lineTo(x, y);
+    }
+    bctx.stroke();
+
+    // head at 'from'
+    bctx.fillStyle = color;
+    bctx.beginPath();
+    bctx.arc(a.x, a.y, 9, 0, Math.PI * 2);
+    bctx.fill();
+    // eyes
+    bctx.fillStyle = "#fff";
+    bctx.beginPath();
+    bctx.arc(a.x - 3, a.y - 3, 2.2, 0, Math.PI * 2);
+    bctx.arc(a.x + 3, a.y - 3, 2.2, 0, Math.PI * 2);
+    bctx.fill();
+    bctx.fillStyle = "#000";
+    bctx.beginPath();
+    bctx.arc(a.x - 3, a.y - 3, 1, 0, Math.PI * 2);
+    bctx.arc(a.x + 3, a.y - 3, 1, 0, Math.PI * 2);
+    bctx.fill();
+    // forked tongue
+    bctx.strokeStyle = "#ffd166";
+    bctx.lineWidth = 1.6;
+    bctx.beginPath();
+    bctx.moveTo(a.x, a.y + 6);
+    bctx.lineTo(a.x, a.y + 12);
+    bctx.moveTo(a.x, a.y + 12);
+    bctx.lineTo(a.x - 3, a.y + 15);
+    bctx.moveTo(a.x, a.y + 12);
+    bctx.lineTo(a.x + 3, a.y + 15);
+    bctx.stroke();
+  }
+
+  // Fan up to 4 tokens into a small cluster so they all stay visible on one
+  // cell. Returns a {dx, dy} pixel offset for player index i.
+  function tokenOffset(i, count) {
+    if (count <= 1) return { dx: 0, dy: -2 };
+    if (count === 2) return { dx: i === 0 ? -9 : 9, dy: -2 };
+    // 3 or 4: a little 2x2 grid
+    const col = i % 2, rowq = Math.floor(i / 2);
+    return { dx: col === 0 ? -8 : 8, dy: (rowq === 0 ? -10 : 6) };
+  }
+
+  function drawTokens() {
+    players.forEach((p, i) => {
+      if (p.pos < 1) return;
+      const c = cellCenter(p.pos);
+      const o = tokenOffset(i, players.length);
+      drawTokenAt(c.x + o.dx, c.y + o.dy, p.color);
+    });
+  }
+
+  function render() {
+    drawBoard();
+    drawTokens();
+  }
+
+  // ---- Die -----------------------------------------------------------------
+  function drawDie(value) {
+    const s = dieCanvas.width;      // 100
+    dctx.clearRect(0, 0, s, s);
+    const r = 18;
+    // rounded square
+    dctx.fillStyle = "#fdf6e3";
+    roundRect(dctx, 6, 6, s - 12, s - 12, r);
+    dctx.fill();
+    dctx.strokeStyle = "#d8c9a0";
+    dctx.lineWidth = 2;
+    dctx.stroke();
+
+    // pips
+    dctx.fillStyle = "#3a2458";
+    const g = s / 4;                 // grid spacing
+    const pts = {
+      1: [[2,2]],
+      2: [[1,1],[3,3]],
+      3: [[1,1],[2,2],[3,3]],
+      4: [[1,1],[1,3],[3,1],[3,3]],
+      5: [[1,1],[1,3],[2,2],[3,1],[3,3]],
+      6: [[1,1],[1,2],[1,3],[3,1],[3,2],[3,3]],
+    }[value] || [];
+    for (const [gx, gy] of pts) {
+      dctx.beginPath();
+      dctx.arc(gx * g, gy * g, 7, 0, Math.PI * 2);
+      dctx.fill();
+    }
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // ---- Sound (Web Audio) ---------------------------------------------------
+  let muted = localStorage.getItem("sal_muted") === "1";
+  let actx = null;
+  updateMuteLabel();
+
+  function ensureAudio() {
+    if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    if (actx && actx.state === "suspended") actx.resume();
+  }
+  function tone(freq, dur, type, gain, when) {
+    if (muted || !actx) return;
+    const t0 = actx.currentTime + (when || 0);
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = type || "sine";
+    o.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(gain || 0.05, t0);
+    o.connect(g).connect(actx.destination);
+    o.start(t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.stop(t0 + dur);
+  }
+
+  // Snake: a descending hiss (noise-ish via detuned saw sweep) + downward slide.
+  function snakeSound() {
+    if (muted) return; ensureAudio(); if (!actx) return;
+    const t0 = actx.currentTime;
+    // hiss: filtered noise burst
+    const dur = 0.6;
+    const buffer = actx.createBuffer(1, actx.sampleRate * dur, actx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const noise = actx.createBufferSource();
+    noise.buffer = buffer;
+    const bp = actx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.setValueAtTime(6000, t0);
+    bp.frequency.exponentialRampToValueAtTime(2500, t0 + dur);
+    bp.Q.value = 0.8;
+    const ng = actx.createGain();
+    ng.gain.setValueAtTime(0.18, t0);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    noise.connect(bp).connect(ng).connect(actx.destination);
+    noise.start(t0);
+    noise.stop(t0 + dur);
+    // downward slide tone
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(500, t0);
+    o.frequency.exponentialRampToValueAtTime(120, t0 + 0.5);
+    g.gain.setValueAtTime(0.05, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+    o.connect(g).connect(actx.destination);
+    o.start(t0); o.stop(t0 + 0.5);
+  }
+
+  // Ladder: cheerful ascending arpeggio (climbing up).
+  function ladderSound() {
+    if (muted) return; ensureAudio(); if (!actx) return;
+    const notes = [392, 523, 659, 784, 988]; // G C E G B
+    notes.forEach((f, i) => tone(f, 0.16, "triangle", 0.06, i * 0.09));
+  }
+
+  function hopSound() {
+    tone(660, 0.05, "square", 0.03);
+  }
+  function winSound() {
+    [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, 0.22, "triangle", 0.07, i * 0.12));
+  }
+  function updateMuteLabel() { muteBtn.textContent = "SOUND: " + (muted ? "OFF" : "ON"); }
+
+  // ---- Game flow -----------------------------------------------------------
+  function setStatus(html) { statusEl.innerHTML = html; }
+
+  function nameTag(p) {
+    return `<span style="color:${p.color};font-weight:bold">${escapeHtml(p.name)}</span>`;
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]));
+  }
+
+  function rollDie() {
+    if (busy || gameOver) return;
+    ensureAudio();
+    busy = true;
+    rollBtn.disabled = true;
+
+    // animate die faces briefly, then settle
+    const final = 1 + Math.floor(Math.random() * 6);
+    let ticks = 0;
+    const spin = setInterval(() => {
+      drawDie(1 + Math.floor(Math.random() * 6));
+      tone(300 + Math.random() * 200, 0.03, "square", 0.02);
+      ticks++;
+      if (ticks >= 10) {
+        clearInterval(spin);
+        dieValue = final;
+        drawDie(final);
+        resolveMove(final);
+      }
+    }, 60);
+  }
+
+  function resolveMove(steps) {
+    const p = players[turn];
+    const target = p.pos + steps;
+
+    if (target > 100) {
+      // overshoot: stay put (must land exactly or within; here we require <=100)
+      setStatus(`${nameTag(p)} rolled ${steps} &mdash; needs ${100 - p.pos} to win, stays put`);
+      endTurn(false);
+      return;
+    }
+
+    setStatus(`${nameTag(p)} rolled ${steps}`);
+    // hop square by square
+    hopTo(p, p.pos, target, () => {
+      // check snake/ladder
+      if (LADDERS[target] !== undefined) {
+        setStatus(`${nameTag(p)} climbs a ladder! ${target} &rarr; ${LADDERS[target]}`);
+        ladderSound();
+        slide(p, target, LADDERS[target], () => finishTurn(p));
+      } else if (SNAKES[target] !== undefined) {
+        setStatus(`${nameTag(p)} hit a snake! ${target} &rarr; ${SNAKES[target]}`);
+        snakeSound();
+        slide(p, target, SNAKES[target], () => finishTurn(p));
+      } else {
+        finishTurn(p);
+      }
+    });
+  }
+
+  function finishTurn(p) {
+    if (p.pos >= 100) {
+      gameOver = true;
+      winSound();
+      setStatus(`🎉 ${nameTag(p)} wins! Tap New Game.`);
+      busy = false;
+      rollBtn.disabled = true;
+      return;
+    }
+    endTurn(true);
+  }
+
+  function endTurn(advance) {
+    if (advance) turn = (turn + 1) % players.length;
+    busy = false;
+    if (gameOver) return;
+    const cur = players[turn];
+    if (cur.isCPU) {
+      rollBtn.disabled = true;
+      setStatus(`${nameTag(cur)} is rolling...`);
+      setTimeout(rollDie, 700);
+    } else {
+      rollBtn.disabled = false;
+      setStatus(`${nameTag(cur)}&rsquo;s turn &mdash; tap ROLL`);
+    }
+  }
+
+  // Animate token hopping from a->b one square at a time.
+  function hopTo(p, from, to, done) {
+    let cur = from;
+    const stepper = setInterval(() => {
+      cur++;
+      p.pos = cur;
+      hopSound();
+      render();
+      if (cur >= to) {
+        clearInterval(stepper);
+        setTimeout(done, 150);
+      }
+    }, 160);
+  }
+
+  // Animate a smooth slide along a snake/ladder from square a to b.
+  function slide(p, a, b, done) {
+    const pa = cellCenter(a), pb = cellCenter(b);
+    const steps = 18;
+    let i = 0;
+    const anim = setInterval(() => {
+      i++;
+      const t = i / steps;
+      // draw board then token at interpolated position
+      drawBoard();
+      // other tokens
+      players.forEach((q, qi) => {
+        if (q === p || q.pos < 1) return;
+        const c = cellCenter(q.pos);
+        const qo = tokenOffset(qi, players.length);
+        drawTokenAt(c.x + qo.dx, c.y + qo.dy, q.color);
+      });
+      const x = pa.x + (pb.x - pa.x) * t;
+      const y = pa.y + (pb.y - pa.y) * t;
+      const po = tokenOffset(players.indexOf(p), players.length);
+      drawTokenAt(x + po.dx, y + po.dy, p.color);
+      if (i >= steps) {
+        clearInterval(anim);
+        p.pos = b;
+        render();
+        setTimeout(done, 150);
+      }
+    }, 22);
+  }
+
+  function drawTokenAt(tx, ty, color) {
+    bctx.fillStyle = "#00000055";
+    bctx.beginPath();
+    bctx.ellipse(tx, ty + 11, 9, 4, 0, 0, Math.PI * 2);
+    bctx.fill();
+    bctx.fillStyle = color;
+    bctx.beginPath();
+    bctx.arc(tx, ty, 10, 0, Math.PI * 2);
+    bctx.fill();
+    bctx.strokeStyle = "#ffffffaa";
+    bctx.lineWidth = 2;
+    bctx.stroke();
+    bctx.fillStyle = "#ffffff66";
+    bctx.beginPath();
+    bctx.arc(tx - 3, ty - 3, 3, 0, Math.PI * 2);
+    bctx.fill();
+  }
+
+  function newGame() {
+    players.forEach(p => p.pos = 0);
+    turn = 0;
+    busy = false;
+    gameOver = false;
+    dieValue = 1;
+    drawDie(1);
+    render();
+    // Begin the first turn (handles CPU-first just in case).
+    const first = players[turn];
+    if (first.isCPU) {
+      rollBtn.disabled = true;
+      setStatus(`${nameTag(first)} is rolling...`);
+      setTimeout(rollDie, 700);
+    } else {
+      rollBtn.disabled = false;
+      setStatus(`${nameTag(first)}&rsquo;s turn &mdash; tap ROLL`);
+    }
+  }
+
+  // ---- Setup screen --------------------------------------------------------
+  function renderPlayerRows() {
+    playersSetup.innerHTML = "";
+    for (let i = 0; i < numPlayers; i++) {
+      const row = document.createElement("div");
+      row.className = "psetup-row";
+
+      const idx = document.createElement("div");
+      idx.className = "idx";
+      idx.textContent = (i + 1);
+
+      const name = document.createElement("input");
+      name.type = "text";
+      name.maxLength = 12;
+      name.value = DEFAULT_NAMES[i];
+      name.dataset.i = i;
+      name.className = "pname";
+
+      const swatches = document.createElement("div");
+      swatches.className = "swatches";
+      MARKER_COLORS.forEach((col, ci) => {
+        const sw = document.createElement("div");
+        sw.className = "swatch" + (chosenColors[i] === ci ? " sel" : "");
+        sw.style.background = col;
+        sw.addEventListener("click", () => {
+          // prevent two players picking the same color
+          if (chosenColors.includes(ci) && chosenColors[i] !== ci) return;
+          chosenColors[i] = ci;
+          renderPlayerRows();
+        });
+        swatches.appendChild(sw);
+      });
+
+      row.appendChild(idx);
+      row.appendChild(name);
+      row.appendChild(swatches);
+      playersSetup.appendChild(row);
+    }
+  }
+
+  function setPlayerCount(n) {
+    numPlayers = n;
+    // assign default distinct colors
+    chosenColors = [];
+    for (let i = 0; i < n; i++) chosenColors[i] = i; // first n palette colors
+    [...countRow.children].forEach(b => b.classList.toggle("active", Number(b.dataset.n) === n));
+    renderPlayerRows();
+  }
+
+  function readName(i, fallback) {
+    const el = playersSetup.querySelector(`.pname[data-i="${i}"]`);
+    const v = el ? el.value.trim() : "";
+    return v || fallback;
+  }
+
+  function startGame() {
+    ensureAudio();
+    players = [];
+    for (let i = 0; i < numPlayers; i++) {
+      players.push({
+        name: readName(i, DEFAULT_NAMES[i]),
+        color: MARKER_COLORS[chosenColors[i]],
+        pos: 0,
+        isCPU: false,
+      });
+    }
+    // Single player => add a CPU opponent.
+    if (numPlayers === 1) {
+      // give the CPU a color different from the player's
+      const used = new Set(players.map(p => p.color));
+      const cpuColor = MARKER_COLORS.find(c => !used.has(c)) || "#ef476f";
+      players.push({ name: "CPU", color: cpuColor, pos: 0, isCPU: true });
+      subEl.textContent = "YOU vs COMPUTER \u2022 FIRST TO 100";
+    } else {
+      subEl.textContent = `${numPlayers} PLAYERS \u2022 FIRST TO 100`;
+    }
+
+    setupEl.classList.add("hidden");
+    gameEl.classList.remove("hidden");
+    newGame();
+  }
+
+  function showSetup() {
+    gameEl.classList.add("hidden");
+    setupEl.classList.remove("hidden");
+  }
+
+  // ---- Wire up -------------------------------------------------------------
+  rollBtn.addEventListener("click", rollDie);
+  dieCanvas.addEventListener("click", rollDie);
+  // "New Game" returns to the setup screen so players/colors can be changed.
+  newBtn.addEventListener("click", () => { if (busy) return; showSetup(); });
+  muteBtn.addEventListener("click", () => {
+    muted = !muted;
+    localStorage.setItem("sal_muted", muted ? "1" : "0");
+    updateMuteLabel();
+    if (!muted) ensureAudio();
+  });
+
+  // Setup controls
+  [...countRow.children].forEach(btn => {
+    btn.addEventListener("click", () => setPlayerCount(Number(btn.dataset.n)));
+  });
+  startBtn.addEventListener("click", startGame);
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  }
+
+  // Boot: show the setup screen with a sensible default (1 player vs CPU).
+  drawDie(1);
+  setPlayerCount(1);
+})();
+</script>
+</body>
+</html>
